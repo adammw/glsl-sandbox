@@ -150,9 +150,11 @@ void main( void ) {
 
 			var quality = 2, quality_levels = [ 0.5, 1, 2, 4, 8 ];
 			var toolbar, compileButton, fullscreenButton, compileTimer, errorLines = [];
-			var code, canvas, gl, buffer, currentProgram, vertexPosition,
+			var code, canvas, gl, buffer, currentProgram, vertexPosition, audioAnalyser, audioContext, 
 			parameters = { startTime: Date.now(), time: 0, mouseX: 0.5, mouseY: 0.5, screenWidth: 0, screenHeight: 0 },
 			frontTarget, backTarget, screenProgram, getWebGL, resizer = {}, compileOnChangeCode = true;
+
+			var meter1,meter2,meter3;
 
 			init();
 			if (gl) { animate(); }
@@ -260,6 +262,42 @@ void main( void ) {
 
 				}, false );
 				toolbar.appendChild( compileButton );
+
+				var defaultAudioFile = 'http://ccmixter.org/content/AlexBeroza/AlexBeroza_-_Falling.mp3';
+
+				audioElement = document.createElement('audio');
+				audioElement.autoplay = true;
+				audioElement.controls = true;
+				audioElement.src = defaultAudioFile;
+
+				toolbar.appendChild(audioElement);
+
+				audioURL = document.createElement('input');
+				audioURL.value = defaultAudioFile;
+				audioURL.addEventListener( 'change', function ( event ) {
+					audioElement.src = audioURL.value;
+				});
+
+				toolbar.appendChild(audioURL);
+
+				audioContext = new webkitAudioContext();
+				audioAnalyser = audioContext.createAnalyser();
+				audioAnalyser.fftSize = 128;
+
+				// Wait for window.onload to fire. See crbug.com/112368
+				window.addEventListener('load', function(e) {
+				  // Our <audio> element will be the audio source.
+				  var source = audioContext.createMediaElementSource(audioElement);
+				  source.connect(audioAnalyser);
+				  audioAnalyser.connect(audioContext.destination);
+				}, false);
+
+				meter1=document.createElement('meter');
+				toolbar.appendChild(meter1);
+				meter2=document.createElement('meter');
+				toolbar.appendChild(meter2);
+				meter3=document.createElement('meter');
+				toolbar.appendChild(meter3);
 
 				// from helper.js
 				add_server_buttons();
@@ -435,6 +473,7 @@ void main( void ) {
 				cacheUniformLocation( program, 'mouse' );
 				cacheUniformLocation( program, 'resolution' );
 				cacheUniformLocation( program, 'backbuffer' );
+				cacheUniformLocation( program, 'audio' );
 
 				// Load program into GPU
 
@@ -686,6 +725,31 @@ void main( void ) {
 				gl.uniform2f( currentProgram.uniformsCache[ 'mouse' ], parameters.mouseX, parameters.mouseY );
 				gl.uniform2f( currentProgram.uniformsCache[ 'resolution' ], parameters.screenWidth, parameters.screenHeight );
 				gl.uniform1i( currentProgram.uniformsCache[ 'backbuffer' ], 0 );
+
+				var audioData = new Uint8Array(audioAnalyser.frequencyBinCount);
+				audioAnalyser.getByteFrequencyData(audioData);
+				var quarter = audioData.length * 0.25;
+				var bass = 0,mid = 0,treble = 0;
+				for (var i = 0; i < quarter; i++) {
+					bass += audioData[i];
+				}
+				bass /= quarter;
+				for (var i = quarter; i < 3*quarter; i++) {
+					mid += audioData[i];
+				}
+				mid /= quarter;
+				for (var i = 3*quarter; i < audioData.length; i++) {
+					treble += audioData[i];
+				}
+				treble /= quarter;
+				meter1.value = bass;
+				meter1.max = 255;
+				meter2.value = mid;
+				meter2.max = 255;
+				meter3.value = treble;
+				meter3.max = 255;
+
+				gl.uniform3f( currentProgram.uniformsCache[ 'audio' ], bass, mid, treble);
 
 				gl.activeTexture( gl.TEXTURE0 );
 				gl.bindTexture( gl.TEXTURE_2D, backTarget.texture );
